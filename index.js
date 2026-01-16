@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const { PrismaClient } = require("@prisma/client");
+const { createClient } = require("@supabase/supabase-js");
+require("dotenv").config();
 
 const app = express();
 const prisma = new PrismaClient();
@@ -9,6 +11,10 @@ const PORT = process.env.PORT || 8080;
 // 미들웨어 설정
 app.use(cors()); // 모든 곳에서 접속 허용 (일단 개발용)
 app.use(express.json()); // JSON 데이터 읽기 허용
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // 1. 기본 접속 테스트
 app.get("/", (req, res) => {
@@ -29,6 +35,7 @@ app.get("/users", async (req, res) => {
 
 // 3. 로그인
 app.post("/auth/login", async (req, res) => {
+  const { email, nickname, googleId } = req.body;
   try {
     // 유저 테이블 확인
     const { data: existingUser, error: findError } = await supabase
