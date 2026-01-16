@@ -18,34 +18,53 @@ app.get("/", (req, res) => {
 // 2. 유저 목록 가져오기 테스트 (DB 연결 확인용)
 app.get("/users", async (req, res) => {
   try {
-    const users = await prisma.user.findMany(); // DB에서 유저 가져오기
+    // DB에서 유저 가져오기
+    const users = await prisma.user.findMany();
     res.json(users);
   } catch (error) {
     console.error("DB Error:", error);
-    res.status(500).json({ error: "DB 연결에 실패했습니다 ㅠㅠ" });
+    res.status(500).json({ error: "DB 연결 실패" });
   }
 });
 
-// 3. 회원가입 (임시 테스트용)
-app.post("/auth/signup", async (req, res) => {
+// 3. 로그인
+app.post("/auth/login", async (req, res) => {
   try {
-    const { email, nickname, googleId } = req.body;
+    // 유저 테이블 확인
+    const { data: existingUser, error: findError } = await supabase
+      .from("User")
+      .select("*")
+      .eq("googleId", googleId)
+      .single();
 
-    // DB 저장
-    const newUser = await prisma.user.create({
-      data: {
-        email,
-        nickname,
-        googleId,
-      },
+    // 기존 유저
+    if (existingUser) {
+      console.log("기존 유저 로그인:", nickname);
+      return res.json({
+        message: "로그인 성공!",
+        user: existingUser,
+        isNewUser: false,
+      });
+    }
+
+    // 신규 유저
+    const { data: newUser, error: insertError } = await supabase
+      .from("User")
+      .insert([{ email, nickname, googleId }])
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+
+    console.log("신규 유저 가입:", nickname);
+    return res.json({
+      message: "환영합니다!",
+      user: newUser,
+      isNewUser: true,
     });
-
-    res.json({ message: "회원가입 성공!", user: newUser });
-  } catch (error) {
-    console.error("Signup Error:", error);
-    res
-      .status(400)
-      .json({ error: "가입 실패 (이미 존재하는 유저일 수 있습니다)" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러 발생" });
   }
 });
 
