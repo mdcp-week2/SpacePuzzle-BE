@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,11 +7,169 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User table
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  nickname  String?
-  googleId  String?  @unique
-  createdAt DateTime @default(now())
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique
+  nickname     String?
+  googleId     String?       @unique
+  parts        Int           @default(0)
+  stars        Int           @default(0)
+  total_clears Int           @default(0)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  gameRecords  GameRecord[]
+  gameAttempts GameAttempt[]
+  userItems    UserItem[]
+  activityLogs ActivityLog[]
+  userBadges   UserBadge[]
+
+  @@map("users")
+}
+
+model Apod {
+  date         String       @id
+  title        String
+  description  String?      @db.Text
+  imageUrl     String
+  puzzleType   String
+  difficulty   String       @default("normal")
+  puzzleSeed   Int          @default(0)
+  pieceCount   Int          @default(0)
+  puzzleConfig Json
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  gameRecords  GameRecord[]
+
+  @@map("apods")
+}
+
+model CelestialObject {
+  id           String       @id @default(uuid()) @db.Uuid
+  nasaId       String       @unique
+  title        String
+  description  String?      @db.Text
+  imageUrl     String
+  category     String?
+  puzzleType   String?
+  difficulty   String?
+  puzzleSeed   Int?
+  pieceCount   Int?
+  puzzleConfig Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  gameRecords  GameRecord[]
+
+  @@map("celestial_objects")
+}
+
+model GameRecord {
+  id                String           @id @default(uuid()) @db.Uuid
+  userId            String           @db.Uuid
+  apodDate          String?
+  celestialObjectId String?          @db.Uuid
+  puzzleType        String
+  bestTime          Float?
+  saveState         Json?
+  isCompleted       Boolean          @default(false)
+  completedAt       DateTime?
+  lastAttemptAt     DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  apod              Apod?            @relation(fields: [apodDate], references: [date], onDelete: Cascade)
+  object            CelestialObject? @relation(fields: [celestialObjectId], references: [id], onDelete: Cascade)
+  attempts          GameAttempt[]
+
+  @@unique([userId, apodDate, puzzleType])
+  @@unique([userId, celestialObjectId, puzzleType])
+  @@map("game_records")
+}
+
+model GameAttempt {
+  id           String     @id @default(uuid()) @db.Uuid
+  recordId     String     @db.Uuid
+  userId       String     @db.Uuid
+  startedAt    DateTime   @default(now())
+  playTime     Float?
+  isCompleted  Boolean    @default(false)
+  completedAt  DateTime?
+  saveState    Json?
+  record       GameRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([recordId, isCompleted, playTime])
+  @@map("game_attempts")
+}
+
+model Item {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String
+  type      String?
+  cost      Int
+  assetUrl  String?
+  userItems UserItem[]
+
+  @@map("items")
+}
+
+model UserItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  itemId     String   @db.Uuid
+  isEquipped Boolean  @default(false)
+  position   Json     @default("{\"x\": 0, \"y\": 0, \"z\": 0}")
+  rotation   Json     @default("{\"x\": 0, \"y\": 0, \"z\": 0}")
+  acquiredAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@map("user_items")
+}
+
+model ActivityLog {
+  userId       String   @map("user_id") @db.Uuid
+  activityDate DateTime @default(now()) @map("activity_date") @db.Date
+  activityType String   @default("puzzle_clear")
+  count        Int      @default(1)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, activityDate, activityType])
+  @@map("activity_logs")
+}
+
+model Badge {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  iconUrl     String?
+  badgeType   String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  userBadges  UserBadge[]
+  rules       BadgeRule[]
+
+  @@map("badges")
+}
+
+model BadgeRule {
+  id         String   @id @default(uuid()) @db.Uuid
+  badgeId    String   @db.Uuid
+  ruleType   String
+  ruleConfig Json
+  createdAt  DateTime @default(now())
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@map("badge_rules")
+}
+
+model UserBadge {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  badgeId    String   @db.Uuid
+  acquiredAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge      Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
 }
