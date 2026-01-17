@@ -52,11 +52,11 @@ const listBySector = async (req, res) => {
   }
 };
 
-const getPuzzleForObject = async (req, res) => {
+const getPuzzleForNasaId = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { nasaId } = req.params;
     const celestialObject = await prisma.celestialObject.findUnique({
-      where: { id },
+      where: { nasaId },
       include: {
         sector: true
       }
@@ -118,5 +118,5 @@ const getPuzzleForObject = async (req, res) => {
 
 module.exports = {
   listBySector,
-  getPuzzleForObject
+  getPuzzleForNasaId
 };
