@@ -17,6 +17,21 @@ const listBySector = async (req, res) => {
     }
 
     const locked = req.authUser.stars < sector.requiredStars;
+    const completedRecords = await prisma.gameRecord.findMany({
+      where: {
+        userId: req.authUser.id,
+        celestialObjectId: {
+          in: sector.celestialObjects.map((object) => object.id)
+        },
+        isCompleted: true
+      },
+      select: {
+        celestialObjectId: true
+      }
+    });
+    const completedSet = new Set(
+      completedRecords.map((record) => record.celestialObjectId)
+    );
 
     const celestialObjects = sector.celestialObjects.map((object) => ({
       id: object.id,
@@ -31,7 +46,8 @@ const listBySector = async (req, res) => {
       rewardStars: object.rewardStars,
       puzzleType: object.puzzleType,
       displayOrder: object.displayOrder,
-      locked
+      locked,
+      isCleared: completedSet.has(object.id)
     }));
 
     res.json({
@@ -116,7 +132,100 @@ const getPuzzleForNasaId = async (req, res) => {
   }
 };
 
+const completePuzzleForNasaId = async (req, res) => {
+  try {
+    const { nasaId } = req.params;
+    const { playTime } = req.body || {};
+
+    const celestialObject = await prisma.celestialObject.findUnique({
+      where: { nasaId },
+      include: {
+        sector: true
+      }
+    });
+
+    if (!celestialObject) {
+      return res.status(404).json({ error: "천체를 찾을 수 없습니다." });
+    }
+
+    const requiredStars = celestialObject.sector?.requiredStars ?? 0;
+    if (req.authUser.stars < requiredStars) {
+      return res.status(403).json({ error: "잠금 해제 조건이 부족합니다." });
+    }
+
+    const recordKey = {
+      userId: req.authUser.id,
+      celestialObjectId: celestialObject.id,
+      puzzleType: celestialObject.puzzleType || "jigsaw"
+    };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const existing = await tx.gameRecord.findUnique({
+        where: {
+          userId_celestialObjectId_puzzleType: recordKey
+        }
+      });
+
+      const isFirstClear = !existing?.isCompleted;
+      const bestTime =
+        typeof playTime === "number" && playTime > 0
+          ? Math.min(existing?.bestTime ?? playTime, playTime)
+          : existing?.bestTime ?? null;
+
+      const updatedRecord = await tx.gameRecord.upsert({
+        where: {
+          userId_celestialObjectId_puzzleType: recordKey
+        },
+        create: {
+          ...recordKey,
+          isCompleted: true,
+          completedAt: new Date(),
+          bestTime
+        },
+        update: {
+          isCompleted: true,
+          completedAt: new Date(),
+          bestTime
+        }
+      });
+
+      let updatedUser = req.authUser;
+      if (isFirstClear) {
+        updatedUser = await tx.user.update({
+          where: { id: req.authUser.id },
+          data: {
+            stars: { increment: celestialObject.rewardStars },
+            total_clears: { increment: 1 }
+          }
+        });
+      }
+
+      return {
+        updatedRecord,
+        updatedUser,
+        isFirstClear
+      };
+    });
+
+    res.json({
+      message: "퍼즐 완료 처리 완료",
+      isFirstClear: result.isFirstClear,
+      rewardStars: result.isFirstClear ? celestialObject.rewardStars : 0,
+      totalStars: result.updatedUser.stars,
+      record: {
+        id: result.updatedRecord.id,
+        bestTime: result.updatedRecord.bestTime,
+        completedAt: result.updatedRecord.completedAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
   listBySector,
-  getPuzzleForNasaId
+  getPuzzleForNasaId,
+  completePuzzleForNasaId
 };
