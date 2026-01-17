@@ -34,7 +34,6 @@ model Apod {
   puzzleType   String
   difficulty   String       @default("normal")
   puzzleSeed   Int          @default(0)
-  pieceCount   Int          @default(0)
   puzzleConfig Json
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -43,20 +42,37 @@ model Apod {
   @@map("apods")
 }
 
+model Sector {
+  id             String            @id @default(uuid()) @db.Uuid
+  slug           String            @unique
+  name           String
+  description    String?
+  displayOrder   Int               @default(0)
+  requiredStars  Int               @default(0)
+  celestialObjects CelestialObject[]
+
+  @@map("sectors")
+}
+
 model CelestialObject {
   id           String       @id @default(uuid()) @db.Uuid
   nasaId       String       @unique
   title        String
+  nameEn       String?
   description  String?      @db.Text
   imageUrl     String
   category     String?
+  sectorId     String?      @db.Uuid
+  displayOrder Int          @default(0)
   puzzleType   String?
   difficulty   String?
   puzzleSeed   Int?
-  pieceCount   Int?
+  gridSize     Int          @default(0)
+  rewardStars  Int          @default(0)
   puzzleConfig Json?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+  sector       Sector?      @relation(fields: [sectorId], references: [id], onDelete: SetNull)
   gameRecords  GameRecord[]
 
   @@map("celestial_objects")
