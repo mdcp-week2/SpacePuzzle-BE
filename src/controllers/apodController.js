@@ -441,9 +441,97 @@ const proxyImage = async (req, res) => {
   }
 };
 
+// APOD 리더보드 조회
+const getApodLeaderboard = async (req, res) => {
+  try {
+    // 오늘 날짜의 APOD 리더보드 조회
+    const todayDate = getDateKey();
+    
+    const apod = await prisma.apod.findUnique({
+      where: { date: todayDate }
+    });
+
+    if (!apod) {
+      return res.status(404).json({ error: "오늘의 APOD를 찾을 수 없습니다." });
+    }
+
+    // 오늘 날짜의 상위 5명 조회
+    const topRecords = await prisma.gameRecord.findMany({
+      where: {
+        apodDate: todayDate,
+        isCompleted: true,
+        bestTime: { not: null }
+      },
+      orderBy: [
+        { bestTime: "asc" },
+        { completedAt: "asc" }
+      ],
+      take: 5,
+      include: {
+        user: true
+      }
+    });
+
+    // 현재 사용자의 기록 조회
+    const userRecord = await prisma.gameRecord.findUnique({
+      where: {
+        userId_apodDate_puzzleType: {
+          userId: req.authUser.id,
+          apodDate: todayDate,
+          puzzleType: APOD_PUZZLE_TYPE
+        }
+      },
+      include: {
+        user: true
+      }
+    });
+
+    // 현재 사용자의 순위 계산
+    let userRank = null;
+    if (userRecord?.bestTime !== null) {
+      const betterCount = await prisma.gameRecord.count({
+        where: {
+          apodDate: todayDate,
+          isCompleted: true,
+          bestTime: { lt: userRecord.bestTime }
+        }
+      });
+      userRank = betterCount + 1;
+    }
+
+    // 프론트엔드 요구사항에 맞는 형식으로 변환
+    res.json({
+      celestialId: "apod",
+      celestialName: "APOD",
+      topPlayers: topRecords.map((record, index) => ({
+        userId: record.user.id,
+        nickname: record.user.nickname,
+        playTime: record.bestTime,
+        starsEarned: 0, // APOD는 별을 주지 않음
+        rank: index + 1,
+        completedAt: record.completedAt
+      })),
+      myRank: userRecord?.bestTime
+        ? {
+            userId: userRecord.user.id,
+            nickname: userRecord.user.nickname,
+            playTime: userRecord.bestTime,
+            starsEarned: 0,
+            rank: userRank,
+            completedAt: userRecord.completedAt
+          }
+        : null
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
   getTodayApodHandler,
   completeApodPuzzle,
   getApodPuzzle,
   proxyImage,
+  getApodLeaderboard,
 };

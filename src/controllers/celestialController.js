@@ -317,15 +317,16 @@ const completePuzzleForNasaId = async (req, res) => {
       };
     });
 
+    // 프론트엔드 요구사항에 맞는 형식으로 변환
     res.json({
-      message: "퍼즐 완료 처리 완료",
-      isFirstClear: result.isFirstClear,
-      rewardStars: result.isFirstClear ? celestialObject.rewardStars : 0,
-      totalStars: result.updatedUser.stars,
-      record: {
-        id: result.updatedRecord.id,
-        bestTime: result.updatedRecord.bestTime,
-        completedAt: result.updatedRecord.completedAt
+      success: true,
+      message: "Puzzle completed successfully",
+      data: {
+        userId: req.authUser.id,
+        stageId: celestialObject.nasaId,
+        playTime: result.updatedRecord.bestTime,
+        starsEarned: result.isFirstClear ? celestialObject.rewardStars : 0,
+        totalStars: result.updatedUser.stars
       }
     });
   } catch (err) {
@@ -388,20 +389,26 @@ const getLeaderboardForNasaId = async (req, res) => {
       userRank = betterCount + 1;
     }
 
+    // 프론트엔드 요구사항에 맞는 형식으로 변환
     res.json({
-      leaderboard: topRecords.map((record, index) => ({
-        rank: index + 1,
+      celestialId: celestialObject.nasaId,
+      celestialName: celestialObject.title,
+      topPlayers: topRecords.map((record, index) => ({
         userId: record.user.id,
         nickname: record.user.nickname,
-        bestTime: record.bestTime,
+        playTime: record.bestTime,
+        starsEarned: celestialObject.rewardStars,
+        rank: index + 1,
         completedAt: record.completedAt
       })),
-      currentUser: userRecord?.bestTime
+      myRank: userRecord?.bestTime
         ? {
             userId: userRecord.user.id,
             nickname: userRecord.user.nickname,
-            bestTime: userRecord.bestTime,
-            rank: userRank
+            playTime: userRecord.bestTime,
+            starsEarned: celestialObject.rewardStars,
+            rank: userRank,
+            completedAt: userRecord.completedAt
           }
         : null
     });
