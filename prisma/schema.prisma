@@ -126,7 +126,6 @@ model Item {
   id        String     @id
   name      String
   type      String?
-  cost      Int
   rarity    String?
   priceType String?
   priceAmount Int?

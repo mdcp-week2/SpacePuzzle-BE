@@ -29,6 +29,12 @@ const purchaseItem = async (req, res) => {
       return res.status(404).json({ success: false, message: "Item not found" });
     }
 
+    if (!item.priceType || typeof item.priceAmount !== "number") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Item pricing is not configured" });
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       const existing = await tx.userItem.findFirst({
         where: { userId: req.authUser.id, itemId }
@@ -46,8 +52,11 @@ const purchaseItem = async (req, res) => {
         return { error: "User not found" };
       }
 
-      if (user.parts < item.cost) {
-        return { error: "Insufficient resources" };
+      if (item.priceType === "credits" && user.credits < item.priceAmount) {
+        return { error: "Insufficient credits" };
+      }
+      if (item.priceType === "spaceParts" && user.parts < item.priceAmount) {
+        return { error: "Insufficient space parts" };
       }
 
       await tx.userItem.create({
@@ -59,11 +68,14 @@ const purchaseItem = async (req, res) => {
 
       const updatedUser = await tx.user.update({
         where: { id: req.authUser.id },
-        data: { parts: { decrement: item.cost } }
+        data:
+          item.priceType === "credits"
+            ? { credits: { decrement: item.priceAmount } }
+            : { parts: { decrement: item.priceAmount } }
       });
 
       return {
-        remainingStars: updatedUser.stars,
+        remainingCredits: updatedUser.credits,
         remainingSpaceParts: updatedUser.parts
       };
     });
@@ -76,7 +88,7 @@ const purchaseItem = async (req, res) => {
       success: true,
       message: "Item purchased successfully",
       itemId,
-      remainingStars: result.remainingStars,
+      remainingCredits: result.remainingCredits,
       remainingSpaceParts: result.remainingSpaceParts
     });
   } catch (err) {
