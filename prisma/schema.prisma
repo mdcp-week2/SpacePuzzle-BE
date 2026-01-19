@@ -123,7 +123,7 @@ model GameAttempt {
 }
 
 model Item {
-  id        String     @id @default(uuid()) @db.Uuid
+  id        String     @id
   name      String
   type      String?
   cost      Int
@@ -139,7 +139,7 @@ model Item {
 model UserItem {
   id         String   @id @default(uuid()) @db.Uuid
   userId     String   @db.Uuid
-  itemId     String   @db.Uuid
+  itemId     String
   isEquipped Boolean  @default(false)
   position   Json     @default("{\"x\": 0, \"y\": 0, \"z\": 0}")
   rotation   Json     @default("{\"x\": 0, \"y\": 0, \"z\": 0}")
