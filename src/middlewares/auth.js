@@ -29,6 +29,34 @@ const requireAuth = async (req, res, next) => {
   }
 };
 
+const optionalAuth = async (req, res, next) => {
+  try {
+    const token = extractBearerToken(req);
+    if (!token) {
+      return next();
+    }
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      return next();
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: data.user.id }
+    });
+
+    if (user) {
+      req.authUser = user;
+    }
+
+    next();
+  } catch (err) {
+    console.error(err);
+    next();
+  }
+};
+
 module.exports = {
-  requireAuth
+  requireAuth,
+  optionalAuth
 };

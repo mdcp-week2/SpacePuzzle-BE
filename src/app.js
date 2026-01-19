@@ -4,6 +4,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const celestialRoutes = require("./routes/celestial");
 const userRoutes = require("./routes/user");
+const apodRoutes = require("./routes/apod");
 
 const app = express();
 
@@ -17,5 +18,6 @@ app.get("/", (req, res) => {
 app.use("/auth", authRoutes);
 app.use("/", celestialRoutes);
 app.use("/", userRoutes);
+app.use("/", apodRoutes);
 
 module.exports = app;
