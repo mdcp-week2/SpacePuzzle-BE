@@ -5,6 +5,8 @@ const authRoutes = require("./routes/auth");
 const celestialRoutes = require("./routes/celestial");
 const userRoutes = require("./routes/user");
 const apodRoutes = require("./routes/apod");
+const shopRoutes = require("./routes/shop");
+const customizationRoutes = require("./routes/customization");
 
 const app = express();
 
@@ -19,5 +21,7 @@ app.use("/auth", authRoutes);
 app.use("/", celestialRoutes);
 app.use("/", userRoutes);
 app.use("/", apodRoutes);
+app.use("/", shopRoutes);
+app.use("/", customizationRoutes);
 
 module.exports = app;
