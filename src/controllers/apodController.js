@@ -79,7 +79,11 @@ const ensureBucketExists = async () => {
 const downloadAndUploadImage = async (nasaImageUrl, date) => {
   try {
     // 버킷 확인
-    await ensureBucketExists();
+    const bucketReady = await ensureBucketExists();
+    if (!bucketReady) {
+      console.warn('Bucket not ready, using NASA URL as fallback');
+      return nasaImageUrl;
+    }
     
     // NASA에서 이미지 다운로드
     const imageResponse = await fetch(nasaImageUrl);
@@ -104,16 +108,35 @@ const downloadAndUploadImage = async (nasaImageUrl, date) => {
       });
 
     if (error) {
+      console.error('Supabase upload error:', error);
       throw error;
     }
 
-    // Public URL 가져오기 (Supabase는 직접 객체를 반환)
+    // Public URL 가져오기
     const { data: urlData } = supabase.storage
       .from('apod-images')
       .getPublicUrl(fileName);
 
-    // Supabase v2에서는 publicUrl이 직접 반환됨
-    return urlData?.publicUrl || urlData;
+    // Supabase getPublicUrl은 { publicUrl: string } 형태로 반환
+    // 또는 직접 문자열을 반환할 수도 있음
+    let publicUrl;
+    if (typeof urlData === 'string') {
+      publicUrl = urlData;
+    } else if (urlData?.publicUrl) {
+      publicUrl = urlData.publicUrl;
+    } else {
+      // URL 직접 구성 (fallback)
+      const supabaseUrl = process.env.SUPABASE_URL;
+      publicUrl = `${supabaseUrl}/storage/v1/object/public/apod-images/${fileName}`;
+    }
+    
+    if (!publicUrl || publicUrl === nasaImageUrl) {
+      console.warn('Failed to get public URL, using NASA URL');
+      return nasaImageUrl;
+    }
+
+    console.log(`Image uploaded successfully: ${publicUrl}`);
+    return publicUrl;
   } catch (err) {
     console.error('Image upload error:', err);
     // 실패 시 원본 NASA URL 반환
@@ -137,7 +160,22 @@ const ensureApodPuzzle = async (apodData) => {
     where: { date: apodData.date }
   });
 
+  // 기존 데이터가 있고 이미 Supabase URL을 가지고 있으면 그대로 반환
   if (existing) {
+    // NASA URL을 가지고 있으면 Supabase Storage로 마이그레이션
+    if (existing.imageUrl && existing.imageUrl.includes('apod.nasa.gov')) {
+      console.log(`Migrating existing APOD image to Supabase: ${apodData.date}`);
+      const nasaImageUrl = apodData.hdurl || apodData.url;
+      const storedImageUrl = await downloadAndUploadImage(nasaImageUrl, apodData.date);
+      
+      // Supabase URL로 업데이트
+      if (storedImageUrl && !storedImageUrl.includes('apod.nasa.gov')) {
+        return prisma.apod.update({
+          where: { date: apodData.date },
+          data: { imageUrl: storedImageUrl }
+        });
+      }
+    }
     return existing;
   }
 
