@@ -1,6 +1,6 @@
 const prisma = require("../prisma/client");
 
-const APOD_REWARD_PARTS = 5;
+const APOD_REWARD_PARTS = 1;
 const APOD_GRID_SIZE = 7;
 const APOD_PUZZLE_TYPE = "jigsaw";
 
@@ -181,7 +181,42 @@ const completeApodPuzzle = async (req, res) => {
   }
 };
 
+const getApodPuzzle = async (req, res) => {
+  try {
+    const apodData = await getTodayApod();
+    
+    if (apodData.media_type !== "image") {
+      return res.status(400).json({ 
+        error: "오늘의 APOD는 이미지가 아닙니다." 
+      });
+    }
+
+    const apod = await ensureApodPuzzle(apodData);
+    
+    if (!apod) {
+      return res.status(404).json({ error: "APOD 퍼즐을 찾을 수 없습니다." });
+    }
+
+    res.json({
+      id: apod.id,
+      date: apod.date,
+      title: apod.title,
+      description: apod.description,
+      imageUrl: apod.imageUrl,
+      puzzleType: apod.puzzleType,
+      difficulty: apod.difficulty,
+      gridSize: APOD_GRID_SIZE,
+      puzzleSeed: apod.puzzleSeed,
+      puzzleConfig: apod.puzzleConfig
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
   getTodayApodHandler,
-  completeApodPuzzle
+  completeApodPuzzle,
+  getApodPuzzle
 };
