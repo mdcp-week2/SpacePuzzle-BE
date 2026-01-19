@@ -55,6 +55,7 @@ model Sector {
   unlockBonusCredits Int           @default(0)
   unlockBonusParts Int             @default(0)
   celestialObjects CelestialObject[]
+  unlockMilestones StarMilestone[]
 
   @@map("sectors")
 }
