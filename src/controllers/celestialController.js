@@ -132,6 +132,111 @@ const getPuzzleForNasaId = async (req, res) => {
   }
 };
 
+const savePuzzleStateForNasaId = async (req, res) => {
+  try {
+    const { nasaId } = req.params;
+    const { saveState, playTime } = req.body || {};
+
+    if (!saveState) {
+      return res.status(400).json({ error: "saveState가 필요합니다." });
+    }
+
+    const celestialObject = await prisma.celestialObject.findUnique({
+      where: { nasaId },
+      include: {
+        sector: true
+      }
+    });
+
+    if (!celestialObject) {
+      return res.status(404).json({ error: "천체를 찾을 수 없습니다." });
+    }
+
+    const requiredStars = celestialObject.sector?.requiredStars ?? 0;
+    if (req.authUser.stars < requiredStars) {
+      return res.status(403).json({ error: "잠금 해제 조건이 부족합니다." });
+    }
+
+    const puzzleType = celestialObject.puzzleType || "jigsaw";
+    const recordKey = {
+      userId: req.authUser.id,
+      celestialObjectId: celestialObject.id,
+      puzzleType
+    };
+
+    const payload = {
+      saveState,
+      lastAttemptAt: new Date()
+    };
+
+    if (typeof playTime === "number" && playTime >= 0) {
+      payload.saveState = {
+        ...saveState,
+        playTime
+      };
+    }
+
+    const record = await prisma.gameRecord.upsert({
+      where: {
+        userId_celestialObjectId_puzzleType: recordKey
+      },
+      create: {
+        ...recordKey,
+        saveState: payload.saveState,
+        lastAttemptAt: payload.lastAttemptAt
+      },
+      update: payload
+    });
+
+    res.json({
+      message: "퍼즐 상태 저장 완료",
+      recordId: record.id,
+      lastAttemptAt: record.lastAttemptAt
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
+const getPuzzleStateForNasaId = async (req, res) => {
+  try {
+    const { nasaId } = req.params;
+
+    const celestialObject = await prisma.celestialObject.findUnique({
+      where: { nasaId }
+    });
+
+    if (!celestialObject) {
+      return res.status(404).json({ error: "천체를 찾을 수 없습니다." });
+    }
+
+    const puzzleType = celestialObject.puzzleType || "jigsaw";
+    const record = await prisma.gameRecord.findUnique({
+      where: {
+        userId_celestialObjectId_puzzleType: {
+          userId: req.authUser.id,
+          celestialObjectId: celestialObject.id,
+          puzzleType
+        }
+      }
+    });
+
+    if (!record?.saveState) {
+      return res.json({ saveState: null });
+    }
+
+    res.json({
+      saveState: record.saveState,
+      lastAttemptAt: record.lastAttemptAt,
+      isCompleted: record.isCompleted
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 const completePuzzleForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
@@ -227,5 +332,7 @@ const completePuzzleForNasaId = async (req, res) => {
 module.exports = {
   listBySector,
   getPuzzleForNasaId,
+  savePuzzleStateForNasaId,
+  getPuzzleStateForNasaId,
   completePuzzleForNasaId
 };
