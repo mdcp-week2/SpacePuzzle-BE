@@ -1,7 +1,7 @@
 const prisma = require("../prisma/client");
 
-const APOD_REWARD_STARS = 10;
-const APOD_GRID_SIZE = 5;
+const APOD_REWARD_PARTS = 5;
+const APOD_GRID_SIZE = 7;
 const APOD_PUZZLE_TYPE = "jigsaw";
 
 const apodCache = new Map();
@@ -154,7 +154,7 @@ const completeApodPuzzle = async (req, res) => {
         updatedUser = await tx.user.update({
           where: { id: req.authUser.id },
           data: {
-            stars: { increment: APOD_REWARD_STARS },
+            parts: { increment: APOD_REWARD_PARTS },
             total_clears: { increment: 1 }
           }
         });
@@ -172,7 +172,7 @@ const completeApodPuzzle = async (req, res) => {
         apodTitle: title || apod.title,
         playTime: typeof playTime === "number" ? playTime : null,
         completedAt: result.updatedRecord.completedAt,
-        rewardStars: result.isFirstClear ? APOD_REWARD_STARS : 0
+        rewardParts: result.isFirstClear ? APOD_REWARD_PARTS : 0
       }
     });
   } catch (err) {
