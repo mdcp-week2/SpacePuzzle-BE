@@ -13,6 +13,7 @@ model User {
   nickname     String?
   googleId     String?       @unique
   parts        Int           @default(0)
+  credits      Int           @default(20)
   stars        Int           @default(0)
   total_clears Int           @default(0)
   createdAt    DateTime      @default(now())
@@ -22,6 +23,8 @@ model User {
   userItems    UserItem[]
   activityLogs ActivityLog[]
   userBadges   UserBadge[]
+  userMilestones UserMilestone[]
+  dailyPuzzleCompletions DailyPuzzleCompletion[]
 
   @@map("users")
 }
@@ -46,9 +49,12 @@ model Sector {
   id             String            @id @default(uuid()) @db.Uuid
   slug           String            @unique
   name           String
+  nameEn         String?
   description    String?
   displayOrder   Int               @default(0)
   requiredStars  Int               @default(0)
+  unlockBonusCredits Int           @default(0)
+  unlockBonusParts Int             @default(0)
   celestialObjects CelestialObject[]
 
   @@map("sectors")
@@ -122,6 +128,9 @@ model Item {
   name      String
   type      String?
   cost      Int
+  rarity    String?
+  priceType String?
+  priceAmount Int?
   assetUrl  String?
   userItems UserItem[]
 
@@ -188,4 +197,42 @@ model UserBadge {
 
   @@unique([userId, badgeId])
   @@map("user_badges")
+}
+
+model StarMilestone {
+  id                String   @id @default(uuid()) @db.Uuid
+  requiredStars     Int      @unique
+  rewardCredits     Int      @default(0)
+  rewardParts       Int      @default(0)
+  unlockSectorId    String?  @db.Uuid
+  milestoneOrder    Int      @default(0)
+  unlockSector      Sector?  @relation(fields: [unlockSectorId], references: [id], onDelete: SetNull)
+  userMilestones    UserMilestone[]
+
+  @@map("star_milestones")
+}
+
+model UserMilestone {
+  id           String        @id @default(uuid()) @db.Uuid
+  userId       String        @db.Uuid
+  milestoneId  String        @db.Uuid
+  achievedAt   DateTime      @default(now())
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  milestone    StarMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, milestoneId])
+  @@map("user_milestones")
+}
+
+model DailyPuzzleCompletion {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  puzzleDate DateTime @db.Date
+  playTime   Int
+  partsEarned Int     @default(1)
+  completedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, puzzleDate])
+  @@map("daily_puzzle_completions")
 }

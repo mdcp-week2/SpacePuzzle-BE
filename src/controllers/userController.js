@@ -105,7 +105,77 @@ const getClearedCelestialObjects = async (req, res) => {
   }
 };
 
+const getUserResources = async (req, res) => {
+  try {
+    const user = req.authUser;
+    const unlockedSectors = await prisma.sector.findMany({
+      where: {
+        requiredStars: { lte: user.stars }
+      },
+      orderBy: { displayOrder: "asc" },
+      select: { id: true }
+    });
+
+    res.json({
+      stars: user.stars,
+      credits: user.credits,
+      spaceParts: user.parts,
+      unlockedSectors: unlockedSectors.map((sector) => sector.id)
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
+const getMilestones = async (req, res) => {
+  try {
+    const milestones = await prisma.starMilestone.findMany({
+      include: { unlockSector: true },
+      orderBy: { milestoneOrder: "asc" }
+    });
+
+    const achieved = await prisma.userMilestone.findMany({
+      where: { userId: req.authUser.id },
+      select: { milestoneId: true }
+    });
+    const achievedSet = new Set(achieved.map((entry) => entry.milestoneId));
+
+    const milestoneList = milestones.map((milestone) => ({
+      requiredStars: milestone.requiredStars,
+      credits: milestone.rewardCredits,
+      spaceParts: milestone.rewardParts,
+      sectorUnlock: milestone.unlockSector
+        ? {
+            id: milestone.unlockSector.id,
+            name: milestone.unlockSector.name
+          }
+        : null,
+      achieved: achievedSet.has(milestone.id)
+    }));
+
+    const nextMilestone = milestones.find(
+      (milestone) => milestone.requiredStars > req.authUser.stars
+    );
+
+    res.json({
+      milestones: milestoneList,
+      nextMilestone: nextMilestone
+        ? {
+            requiredStars: nextMilestone.requiredStars,
+            starsNeeded: nextMilestone.requiredStars - req.authUser.stars
+          }
+        : null
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
   getMe,
-  getClearedCelestialObjects
+  getClearedCelestialObjects,
+  getUserResources,
+  getMilestones
 };
