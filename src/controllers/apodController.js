@@ -1,4 +1,5 @@
 const prisma = require("../prisma/client");
+const { supabase } = require("../services/supabase");
 
 const APOD_REWARD_PARTS = 1;
 const APOD_GRID_SIZE = 7;
@@ -44,6 +45,83 @@ const getTodayApod = async () => {
   return data;
 };
 
+// 버킷 존재 확인 및 생성 함수
+const ensureBucketExists = async () => {
+  try {
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error('Failed to list buckets:', listError);
+      return false;
+    }
+    
+    const bucketExists = buckets?.some(b => b.name === 'apod-images') || false;
+    
+    if (!bucketExists) {
+      const { error: createError } = await supabase.storage.createBucket('apod-images', {
+        public: true
+      });
+      
+      if (createError && createError.message !== 'Bucket already exists') {
+        console.error('Failed to create bucket:', createError);
+        return false;
+      }
+    }
+    
+    return true;
+  } catch (err) {
+    console.error('ensureBucketExists error:', err);
+    return false;
+  }
+};
+
+// 이미지 다운로드 및 업로드 함수
+const downloadAndUploadImage = async (nasaImageUrl, date) => {
+  try {
+    // 버킷 확인
+    await ensureBucketExists();
+    
+    // NASA에서 이미지 다운로드
+    const imageResponse = await fetch(nasaImageUrl);
+    if (!imageResponse.ok) {
+      throw new Error(`Failed to download image: ${imageResponse.status}`);
+    }
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBlob = Buffer.from(imageBuffer);
+    
+    // 파일 확장자 추출 (더 안전한 방법)
+    const urlPath = new URL(nasaImageUrl).pathname;
+    const extension = urlPath.split('.').pop()?.toLowerCase() || 'jpg';
+    const fileName = `apod/${date}.${extension}`;
+
+    // Supabase Storage에 업로드
+    const { data, error } = await supabase.storage
+      .from('apod-images')
+      .upload(fileName, imageBlob, {
+        contentType: imageResponse.headers.get('content-type') || 'image/jpeg',
+        upsert: true
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    // Public URL 가져오기 (Supabase는 직접 객체를 반환)
+    const { data: urlData } = supabase.storage
+      .from('apod-images')
+      .getPublicUrl(fileName);
+
+    // Supabase v2에서는 publicUrl이 직접 반환됨
+    return urlData?.publicUrl || urlData;
+  } catch (err) {
+    console.error('Image upload error:', err);
+    // 실패 시 원본 NASA URL 반환
+    return nasaImageUrl;
+  }
+};
+
+// APOD 퍼즐 생성/확인 함수
 const ensureApodPuzzle = async (apodData) => {
   if (!apodData || apodData.media_type !== "image") {
     return null;
@@ -63,12 +141,16 @@ const ensureApodPuzzle = async (apodData) => {
     return existing;
   }
 
+  // NASA 이미지를 Supabase Storage에 업로드
+  const nasaImageUrl = apodData.hdurl || apodData.url;
+  const storedImageUrl = await downloadAndUploadImage(nasaImageUrl, apodData.date);
+
   return prisma.apod.create({
     data: {
       date: apodData.date,
       title: apodData.title,
       description: apodData.explanation,
-      imageUrl: apodData.hdurl || apodData.url,
+      imageUrl: storedImageUrl,
       puzzleType: APOD_PUZZLE_TYPE,
       difficulty: "special",
       puzzleSeed: seed,
