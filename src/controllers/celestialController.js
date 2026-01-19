@@ -1,5 +1,6 @@
 const prisma = require("../prisma/client");
 
+// 섹터 별 천체 조회
 const listBySector = async (req, res) => {
   try {
     const { slug } = req.params;
@@ -68,6 +69,7 @@ const listBySector = async (req, res) => {
   }
 };
 
+// 특정 천체 퍼즐 조회
 const getPuzzleForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
@@ -132,6 +134,7 @@ const getPuzzleForNasaId = async (req, res) => {
   }
 };
 
+// 특정 천체 퍼즐 상태 저장
 const savePuzzleStateForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
@@ -199,6 +202,7 @@ const savePuzzleStateForNasaId = async (req, res) => {
   }
 };
 
+// 특정 천체 퍼즐 상태 불러오기
 const getPuzzleStateForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
@@ -237,6 +241,7 @@ const getPuzzleStateForNasaId = async (req, res) => {
   }
 };
 
+// 특정 천체 퍼즐 완료 처리
 const completePuzzleForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
@@ -305,6 +310,7 @@ const completePuzzleForNasaId = async (req, res) => {
         });
       }
 
+      // 뱃지 규칙
       const badgeRules = await tx.badgeRule.findMany({
         include: { badge: true }
       });
