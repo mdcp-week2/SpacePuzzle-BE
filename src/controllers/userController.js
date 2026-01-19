@@ -9,25 +9,18 @@ const getMe = async (req, res) => {
       ? Math.min(Math.max(daysParam, 1), 365)
       : 30;
 
-    const [badges, recentActivity] = await Promise.all([
-      prisma.userBadge.findMany({
-        where: { userId: user.id },
-        include: { badge: true },
-        orderBy: { acquiredAt: "desc" }
-      }),
-      prisma.$queryRaw`
-        select
-          date(gr."completedAt") as date,
-          count(*)::int as count
-        from "game_records" gr
-        where gr."userId" = ${user.id}
-          and gr."isCompleted" = true
-          and gr."completedAt" is not null
-        group by date(gr."completedAt")
-        order by date desc
-        limit ${activityDays};
-      `
-    ]);
+    const recentActivity = await prisma.$queryRaw`
+      select
+        date(gr."completedAt") as date,
+        count(*)::int as count
+      from "game_records" gr
+      where gr."userId" = ${user.id}
+        and gr."isCompleted" = true
+        and gr."completedAt" is not null
+      group by date(gr."completedAt")
+      order by date desc
+      limit ${activityDays};
+    `;
 
     const formatDateKey = (date) => date.toISOString().slice(0, 10);
     const today = new Date();
@@ -49,14 +42,6 @@ const getMe = async (req, res) => {
       stars: user.stars,
       parts: user.parts,
       totalClears: user.total_clears,
-      badges: badges.map((entry) => ({
-        id: entry.badge.id,
-        name: entry.badge.name,
-        description: entry.badge.description,
-        iconUrl: entry.badge.iconUrl,
-        badgeType: entry.badge.badgeType,
-        acquiredAt: entry.acquiredAt
-      })),
       recentActivity: lastDays
     });
   } catch (err) {

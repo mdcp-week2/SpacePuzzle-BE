@@ -310,82 +310,10 @@ const completePuzzleForNasaId = async (req, res) => {
         });
       }
 
-      // 뱃지 규칙
-      const badgeRules = await tx.badgeRule.findMany({
-        include: { badge: true }
-      });
-      const existingBadges = await tx.userBadge.findMany({
-        where: { userId: req.authUser.id },
-        select: { badgeId: true }
-      });
-      const ownedBadgeIds = new Set(
-        existingBadges.map((entry) => entry.badgeId)
-      );
-
-      const playTimeSeconds =
-        typeof playTime === "number" && playTime > 0 ? playTime : null;
-
-      const newlyAwarded = [];
-
-      for (const rule of badgeRules) {
-        if (ownedBadgeIds.has(rule.badgeId)) {
-          continue;
-        }
-
-        const config = rule.ruleConfig || {};
-        let eligible = false;
-
-        switch (rule.ruleType) {
-          case "TOTAL_CLEAR": {
-            const requiredCount = Number(config.count ?? 0);
-            eligible = requiredCount > 0 && updatedUser.total_clears >= requiredCount;
-            break;
-          }
-          case "FAST_CLEAR": {
-            const maxSeconds = Number(config.seconds ?? config.maxSeconds ?? 0);
-            eligible =
-              maxSeconds > 0 &&
-              playTimeSeconds !== null &&
-              playTimeSeconds <= maxSeconds;
-            break;
-          }
-          case "FIRST_CLEAR": {
-            eligible = isFirstClear === true;
-            break;
-          }
-          default:
-            eligible = false;
-        }
-
-        if (!eligible) {
-          continue;
-        }
-
-        const badge = await tx.userBadge.create({
-          data: {
-            userId: req.authUser.id,
-            badgeId: rule.badgeId
-          },
-          include: {
-            badge: true
-          }
-        });
-
-        newlyAwarded.push({
-          id: badge.badge.id,
-          name: badge.badge.name,
-          description: badge.badge.description,
-          iconUrl: badge.badge.iconUrl,
-          badgeType: badge.badge.badgeType,
-          acquiredAt: badge.acquiredAt
-        });
-      }
-
       return {
         updatedRecord,
         updatedUser,
-        isFirstClear,
-        newlyAwarded
+        isFirstClear
       };
     });
 
@@ -394,7 +322,6 @@ const completePuzzleForNasaId = async (req, res) => {
       isFirstClear: result.isFirstClear,
       rewardStars: result.isFirstClear ? celestialObject.rewardStars : 0,
       totalStars: result.updatedUser.stars,
-      newBadges: result.newlyAwarded,
       record: {
         id: result.updatedRecord.id,
         bestTime: result.updatedRecord.bestTime,
@@ -407,6 +334,7 @@ const completePuzzleForNasaId = async (req, res) => {
   }
 };
 
+// 특정 천체 퍼즐 랭킹 조회
 const getLeaderboardForNasaId = async (req, res) => {
   try {
     const { nasaId } = req.params;
