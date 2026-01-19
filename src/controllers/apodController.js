@@ -36,10 +36,33 @@ const fetchApodFromNasa = async () => {
 
 const getTodayApod = async () => {
   const todayKey = getDateKey();
+  
+  // 메모리 캐시 확인
   if (apodCache.has(todayKey)) {
     return apodCache.get(todayKey);
   }
 
+  // DB에 저장된 데이터가 있으면 NASA API 호출하지 않고 DB에서 반환
+  const existingApod = await prisma.apod.findUnique({
+    where: { date: todayKey }
+  });
+
+  if (existingApod) {
+    // DB 데이터를 NASA API 형식으로 변환
+    const cachedData = {
+      date: existingApod.date,
+      title: existingApod.title,
+      explanation: existingApod.description,
+      url: existingApod.imageUrl,
+      hdurl: existingApod.imageUrl,
+      media_type: "image",
+      copyright: null
+    };
+    apodCache.set(todayKey, cachedData);
+    return cachedData;
+  }
+
+  // DB에 없으면 NASA API 호출
   const data = await fetchApodFromNasa();
   apodCache.set(todayKey, data);
   return data;
@@ -335,8 +358,92 @@ const getApodPuzzle = async (req, res) => {
   }
 };
 
+// 이미지 프록시 API
+const proxyImage = async (req, res) => {
+  try {
+    const imageUrl = req.query.url;
+
+    if (!imageUrl) {
+      return res.status(400).json({ error: "URL parameter is required" });
+    }
+
+    // URL 검증 (보안)
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(imageUrl);
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid URL format" });
+    }
+
+    // 허용된 도메인만 프록시 (보안 강화)
+    const allowedDomains = ["apod.nasa.gov", "nasa.gov", "supabase.co"];
+    const isAllowed = allowedDomains.some((domain) =>
+      parsedUrl.hostname.includes(domain)
+    );
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: "Domain not allowed" });
+    }
+
+    console.log("🖼️ Proxying image:", imageUrl);
+
+    // 원본 이미지 다운로드 (타임아웃 처리)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30초 타임아웃
+
+    let imageResponse;
+    try {
+      imageResponse = await fetch(imageUrl, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === "AbortError") {
+        return res.status(504).json({ error: "Request timeout" });
+      }
+      throw err;
+    }
+
+    if (!imageResponse.ok) {
+      return res.status(500).json({
+        error: "Failed to download image",
+        details: `HTTP ${imageResponse.status}`,
+      });
+    }
+
+    const imageBuffer = await imageResponse.arrayBuffer();
+    const contentType =
+      imageResponse.headers.get("content-type") || "image/jpeg";
+
+    // 이미지 크기 제한 (10MB)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (imageBuffer.byteLength > maxSize) {
+      return res.status(413).json({ error: "Image too large (max 10MB)" });
+    }
+
+    // CORS 헤더 추가
+    res.set("Content-Type", contentType);
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Cache-Control", "public, max-age=86400"); // 24시간 캐시
+    res.set("Content-Length", imageBuffer.byteLength);
+
+    // 이미지 데이터 반환
+    res.send(Buffer.from(imageBuffer));
+
+    console.log("✅ Image proxied successfully");
+  } catch (err) {
+    console.error("❌ Image proxy error:", err.message);
+    res.status(500).json({
+      error: "Failed to proxy image",
+      details: err.message,
+    });
+  }
+};
+
 module.exports = {
   getTodayApodHandler,
   completeApodPuzzle,
-  getApodPuzzle
+  getApodPuzzle,
+  proxyImage,
 };
