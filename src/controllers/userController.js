@@ -1,5 +1,6 @@
 const prisma = require("../prisma/client");
 
+// 유저 정보 조회 API
 const getMe = async (req, res) => {
   try {
     const user = req.authUser;
@@ -64,6 +65,47 @@ const getMe = async (req, res) => {
   }
 };
 
+// 클리어한 천체 리스트(도감) 조회 API
+const getClearedCelestialObjects = async (req, res) => {
+  try {
+    const records = await prisma.gameRecord.findMany({
+      where: {
+        userId: req.authUser.id,
+        isCompleted: true,
+        celestialObjectId: { not: null }
+      },
+      include: {
+        object: true
+      },
+      orderBy: {
+        completedAt: "desc"
+      }
+    });
+
+    const cleared = records
+      .filter((record) => record.object)
+      .map((record) => ({
+        id: record.object.id,
+        nasaId: record.object.nasaId,
+        title: record.object.title,
+        nameEn: record.object.nameEn,
+        description: record.object.description,
+        imageUrl: record.object.imageUrl,
+        category: record.object.category,
+        difficulty: record.object.difficulty,
+        gridSize: record.object.gridSize,
+        rewardStars: record.object.rewardStars,
+        clearedAt: record.completedAt
+      }));
+
+    res.json({ cleared });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
-  getMe
+  getMe,
+  getClearedCelestialObjects
 };
