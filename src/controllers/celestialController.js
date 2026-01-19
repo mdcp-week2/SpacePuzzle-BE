@@ -338,16 +338,66 @@ const completePuzzleForNasaId = async (req, res) => {
 // 특정 천체 퍼즐 랭킹 조회
 const getLeaderboardForNasaId = async (req, res) => {
   try {
+    // URL 디코딩 처리
     const { nasaId } = req.params;
+    const decodedNasaId = decodeURIComponent(nasaId);
 
-    const celestialObject = await prisma.celestialObject.findUnique({
-      where: { nasaId }
+    console.log(`[Leaderboard] Request for identifier: ${decodedNasaId}`);
+
+    // 천체 조회: nasaId, id, title, nameEn 순서로 시도
+    let celestialObject = null;
+
+    // 1. nasaId로 조회
+    celestialObject = await prisma.celestialObject.findUnique({
+      where: { nasaId: decodedNasaId }
     });
 
+    // 2. id (UUID)로 조회 시도
     if (!celestialObject) {
+      // UUID 형식인지 확인 (8-4-4-4-12 형식)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(decodedNasaId)) {
+        console.log(`[Leaderboard] Not found by nasaId, trying id (UUID): ${decodedNasaId}`);
+        celestialObject = await prisma.celestialObject.findUnique({
+          where: { id: decodedNasaId }
+        });
+      }
+    }
+
+    // 3. title로 조회 시도
+    if (!celestialObject) {
+      console.log(`[Leaderboard] Not found by nasaId/id, trying title: ${decodedNasaId}`);
+      celestialObject = await prisma.celestialObject.findFirst({
+        where: { 
+          title: {
+            equals: decodedNasaId,
+            mode: 'insensitive' // 대소문자 구분 없이
+          }
+        }
+      });
+    }
+
+    // 4. nameEn으로 조회 시도
+    if (!celestialObject) {
+      console.log(`[Leaderboard] Not found by title, trying nameEn: ${decodedNasaId}`);
+      celestialObject = await prisma.celestialObject.findFirst({
+        where: { 
+          nameEn: {
+            equals: decodedNasaId,
+            mode: 'insensitive'
+          }
+        }
+      });
+    }
+
+    if (!celestialObject) {
+      console.log(`[Leaderboard] Celestial object not found: ${decodedNasaId}`);
       return res.status(404).json({ error: "천체를 찾을 수 없습니다." });
     }
 
+    console.log(`[Leaderboard] Found celestial object: ${celestialObject.title}`);
+
+    // 상위 5명 조회
     const topRecords = await prisma.gameRecord.findMany({
       where: {
         celestialObjectId: celestialObject.id,
@@ -364,6 +414,14 @@ const getLeaderboardForNasaId = async (req, res) => {
       }
     });
 
+    console.log(`[Leaderboard] Found ${topRecords.length} top records`);
+
+    // 현재 사용자 기록 조회
+    if (!req.authUser || !req.authUser.id) {
+      console.error("[Leaderboard] req.authUser is missing");
+      return res.status(401).json({ error: "인증이 필요합니다." });
+    }
+
     const userRecord = await prisma.gameRecord.findUnique({
       where: {
         userId_celestialObjectId_puzzleType: {
@@ -377,8 +435,9 @@ const getLeaderboardForNasaId = async (req, res) => {
       }
     });
 
+    // 현재 사용자 순위 계산
     let userRank = null;
-    if (userRecord?.bestTime !== null) {
+    if (userRecord?.bestTime !== null && userRecord?.bestTime !== undefined) {
       const betterCount = await prisma.gameRecord.count({
         where: {
           celestialObjectId: celestialObject.id,
@@ -390,31 +449,44 @@ const getLeaderboardForNasaId = async (req, res) => {
     }
 
     // 프론트엔드 요구사항에 맞는 형식으로 변환
-    res.json({
-      celestialId: celestialObject.nasaId,
-      celestialName: celestialObject.title,
-      topPlayers: topRecords.map((record, index) => ({
+    // user가 null인 경우 필터링
+    const topPlayers = topRecords
+      .filter((record) => record.user !== null)
+      .map((record, index) => ({
         userId: record.user.id,
-        nickname: record.user.nickname,
+        nickname: record.user.nickname || "익명",
         playTime: record.bestTime,
         starsEarned: celestialObject.rewardStars,
         rank: index + 1,
         completedAt: record.completedAt
-      })),
-      myRank: userRecord?.bestTime
-        ? {
-            userId: userRecord.user.id,
-            nickname: userRecord.user.nickname,
-            playTime: userRecord.bestTime,
-            starsEarned: celestialObject.rewardStars,
-            rank: userRank,
-            completedAt: userRecord.completedAt
-          }
-        : null
+      }));
+
+    const myRank = userRecord?.bestTime && userRecord?.user
+      ? {
+          userId: userRecord.user.id,
+          nickname: userRecord.user.nickname || "익명",
+          playTime: userRecord.bestTime,
+          starsEarned: celestialObject.rewardStars,
+          rank: userRank,
+          completedAt: userRecord.completedAt
+        }
+      : null;
+
+    console.log(`[Leaderboard] Returning ${topPlayers.length} top players, userRank: ${userRank}`);
+
+    res.json({
+      celestialId: celestialObject.nasaId,
+      celestialName: celestialObject.title,
+      topPlayers,
+      myRank
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "서버 에러" });
+    console.error("[Leaderboard] Error:", err);
+    console.error("[Leaderboard] Stack:", err.stack);
+    res.status(500).json({ 
+      error: "서버 에러",
+      message: err.message 
+    });
   }
 };
 
