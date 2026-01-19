@@ -4,7 +4,8 @@ const {
   getPuzzleForNasaId,
   savePuzzleStateForNasaId,
   getPuzzleStateForNasaId,
-  completePuzzleForNasaId
+  completePuzzleForNasaId,
+  getLeaderboardForNasaId
 } = require("../controllers/celestialController");
 const { requireAuth } = require("../middlewares/auth");
 
@@ -30,6 +31,11 @@ router.post(
   "/celestial-objects/:nasaId/complete",
   requireAuth,
   completePuzzleForNasaId
+);
+router.get(
+  "/celestial-objects/:nasaId/leaderboard",
+  requireAuth,
+  getLeaderboardForNasaId
 );
 
 module.exports = router;

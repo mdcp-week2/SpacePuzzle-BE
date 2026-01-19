@@ -407,10 +407,87 @@ const completePuzzleForNasaId = async (req, res) => {
   }
 };
 
+const getLeaderboardForNasaId = async (req, res) => {
+  try {
+    const { nasaId } = req.params;
+
+    const celestialObject = await prisma.celestialObject.findUnique({
+      where: { nasaId }
+    });
+
+    if (!celestialObject) {
+      return res.status(404).json({ error: "천체를 찾을 수 없습니다." });
+    }
+
+    const topRecords = await prisma.gameRecord.findMany({
+      where: {
+        celestialObjectId: celestialObject.id,
+        isCompleted: true,
+        bestTime: { not: null }
+      },
+      orderBy: [
+        { bestTime: "asc" },
+        { completedAt: "asc" }
+      ],
+      take: 5,
+      include: {
+        user: true
+      }
+    });
+
+    const userRecord = await prisma.gameRecord.findUnique({
+      where: {
+        userId_celestialObjectId_puzzleType: {
+          userId: req.authUser.id,
+          celestialObjectId: celestialObject.id,
+          puzzleType: celestialObject.puzzleType || "jigsaw"
+        }
+      },
+      include: {
+        user: true
+      }
+    });
+
+    let userRank = null;
+    if (userRecord?.bestTime !== null) {
+      const betterCount = await prisma.gameRecord.count({
+        where: {
+          celestialObjectId: celestialObject.id,
+          isCompleted: true,
+          bestTime: { lt: userRecord.bestTime }
+        }
+      });
+      userRank = betterCount + 1;
+    }
+
+    res.json({
+      leaderboard: topRecords.map((record, index) => ({
+        rank: index + 1,
+        userId: record.user.id,
+        nickname: record.user.nickname,
+        bestTime: record.bestTime,
+        completedAt: record.completedAt
+      })),
+      currentUser: userRecord?.bestTime
+        ? {
+            userId: userRecord.user.id,
+            nickname: userRecord.user.nickname,
+            bestTime: userRecord.bestTime,
+            rank: userRank
+          }
+        : null
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
 module.exports = {
   listBySector,
   getPuzzleForNasaId,
   savePuzzleStateForNasaId,
   getPuzzleStateForNasaId,
-  completePuzzleForNasaId
+  completePuzzleForNasaId,
+  getLeaderboardForNasaId
 };
