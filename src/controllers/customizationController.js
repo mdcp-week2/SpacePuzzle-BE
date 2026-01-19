@@ -25,8 +25,8 @@ const getCustomization = async (req, res) => {
       cockpit: cockpit?.item.id || "cockpit_default",
       items: placed.map((entry) => ({
         itemId: entry.item.id,
-        position: entry.position,
-        rotation: entry.rotation
+        x: entry.position?.x ?? DEFAULT_POSITION.x,
+        y: entry.position?.y ?? DEFAULT_POSITION.y
       }))
     });
   } catch (err) {
@@ -84,9 +84,10 @@ const setCustomization = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Customization updated",
-      currentBackground: type === "background" ? itemId : undefined,
-      currentCockpit: type === "cockpit" ? itemId : undefined
+      message:
+        type === "background"
+          ? "배경이 변경되었습니다."
+          : "조종석이 변경되었습니다."
     });
   } catch (err) {
     console.error(err);
@@ -136,14 +137,7 @@ const placeItem = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Item placed",
-      items: [
-        {
-          itemId: userItem.item.id,
-          position: updated.position,
-          rotation: updated.rotation
-        }
-      ]
+      message: "아이템이 배치되었습니다."
     });
   } catch (err) {
     console.error(err);
@@ -187,14 +181,7 @@ const removeItem = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Item removed",
-      items: [
-        {
-          itemId: userItem.item.id,
-          position: updated.position,
-          rotation: updated.rotation
-        }
-      ]
+      message: "아이템이 제거되었습니다."
     });
   } catch (err) {
     console.error(err);

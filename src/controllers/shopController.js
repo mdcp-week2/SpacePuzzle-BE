@@ -76,6 +76,7 @@ const purchaseItem = async (req, res) => {
 
       return {
         remainingCredits: updatedUser.credits,
+        remainingStars: updatedUser.stars,
         remainingSpaceParts: updatedUser.parts
       };
     });
@@ -89,6 +90,7 @@ const purchaseItem = async (req, res) => {
       message: "Item purchased successfully",
       itemId,
       remainingCredits: result.remainingCredits,
+      remainingStars: result.remainingStars,
       remainingSpaceParts: result.remainingSpaceParts
     });
   } catch (err) {
