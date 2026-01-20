@@ -140,10 +140,6 @@ const savePuzzleStateForNasaId = async (req, res) => {
     const { nasaId } = req.params;
     const { saveState, playTime } = req.body || {};
 
-    if (!saveState) {
-      return res.status(400).json({ error: "saveState가 필요합니다." });
-    }
-
     const celestialObject = await prisma.celestialObject.findUnique({
       where: { nasaId },
       include: {
@@ -167,6 +163,38 @@ const savePuzzleStateForNasaId = async (req, res) => {
       puzzleType
     };
 
+    // saveState가 null이면 저장 상태 삭제 (퍼즐 포기)
+    if (saveState === null) {
+      const existingRecord = await prisma.gameRecord.findUnique({
+        where: {
+          userId_celestialObjectId_puzzleType: recordKey
+        }
+      });
+
+      if (existingRecord) {
+        await prisma.gameRecord.update({
+          where: {
+            userId_celestialObjectId_puzzleType: recordKey
+          },
+          data: {
+            saveState: null,
+            lastAttemptAt: new Date()
+          }
+        });
+      }
+
+      return res.json({
+        message: "저장 상태가 삭제되었습니다.",
+        nasaId
+      });
+    }
+
+    // saveState가 없으면 에러
+    if (saveState === undefined) {
+      return res.status(400).json({ error: "saveState가 필요합니다." });
+    }
+
+    // saveState가 있으면 저장/업데이트
     const payload = {
       saveState,
       lastAttemptAt: new Date()
