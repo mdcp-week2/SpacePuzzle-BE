@@ -10,8 +10,8 @@ const getCustomization = async (req, res) => {
       include: { item: true }
     });
 
-    const background = items.find(
-      (entry) => entry.item.type === "background" && entry.isEquipped
+    const wall = items.find(
+      (entry) => entry.item.type === "wall" && entry.isEquipped
     );
     const cockpit = items.find(
       (entry) => entry.item.type === "cockpit" && entry.isEquipped
@@ -21,7 +21,7 @@ const getCustomization = async (req, res) => {
     );
 
     res.json({
-      background: background?.item.id || "bg_default",
+      wall: wall?.item.id || "wall_default",
       cockpit: cockpit?.item.id || "cockpit_default",
       items: placed.map((entry) => ({
         itemId: entry.item.id,
@@ -45,7 +45,7 @@ const setCustomization = async (req, res) => {
         .json({ success: false, message: "type과 itemId가 필요합니다." });
     }
 
-    if (type !== "background" && type !== "cockpit") {
+    if (type !== "wall" && type !== "cockpit") {
       return res
         .status(400)
         .json({ success: false, message: "Invalid item type" });
@@ -85,7 +85,7 @@ const setCustomization = async (req, res) => {
     res.json({
       success: true,
       message:
-        type === "background"
+        type === "wall"
           ? "배경이 변경되었습니다."
           : "조종석이 변경되었습니다."
     });
