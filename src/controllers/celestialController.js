@@ -269,6 +269,69 @@ const getPuzzleStateForNasaId = async (req, res) => {
   }
 };
 
+const awardStarMilestones = async (tx, userId, currentStars) => {
+  const milestones = await tx.starMilestone.findMany({
+    where: {
+      requiredStars: { lte: currentStars }
+    },
+    select: {
+      id: true,
+      rewardCredits: true,
+      rewardParts: true
+    }
+  });
+
+  if (milestones.length === 0) {
+    return { rewardCredits: 0, rewardParts: 0 };
+  }
+
+  const achieved = await tx.userMilestone.findMany({
+    where: {
+      userId,
+      milestoneId: { in: milestones.map((milestone) => milestone.id) }
+    },
+    select: { milestoneId: true }
+  });
+  const achievedSet = new Set(achieved.map((entry) => entry.milestoneId));
+
+  const newlyAchieved = milestones.filter(
+    (milestone) => !achievedSet.has(milestone.id)
+  );
+
+  if (newlyAchieved.length === 0) {
+    return { rewardCredits: 0, rewardParts: 0 };
+  }
+
+  await tx.userMilestone.createMany({
+    data: newlyAchieved.map((milestone) => ({
+      userId,
+      milestoneId: milestone.id
+    })),
+    skipDuplicates: true
+  });
+
+  const rewardCredits = newlyAchieved.reduce(
+    (sum, milestone) => sum + (milestone.rewardCredits || 0),
+    0
+  );
+  const rewardParts = newlyAchieved.reduce(
+    (sum, milestone) => sum + (milestone.rewardParts || 0),
+    0
+  );
+
+  if (rewardCredits || rewardParts) {
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        credits: rewardCredits ? { increment: rewardCredits } : undefined,
+        parts: rewardParts ? { increment: rewardParts } : undefined
+      }
+    });
+  }
+
+  return { rewardCredits, rewardParts };
+};
+
 // 특정 천체 퍼즐 완료 처리
 const completePuzzleForNasaId = async (req, res) => {
   try {
@@ -336,6 +399,8 @@ const completePuzzleForNasaId = async (req, res) => {
             total_clears: { increment: 1 }
           }
         });
+
+        await awardStarMilestones(tx, req.authUser.id, updatedUser.stars);
       }
 
       return {

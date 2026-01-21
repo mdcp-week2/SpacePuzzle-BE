@@ -254,7 +254,7 @@ const completeApodPuzzle = async (req, res) => {
     }
 
     const apodDate = apod.date;
-    const puzzleDate = new Date(apodDate);
+    const puzzleDate = new Date(`${apodDate}T00:00:00.000Z`);
     if (Number.isNaN(puzzleDate.getTime())) {
       return res.status(400).json({ error: "APOD 날짜 형식이 올바르지 않습니다." });
     }
