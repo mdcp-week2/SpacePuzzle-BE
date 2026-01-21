@@ -53,7 +53,7 @@ const getMe = async (req, res) => {
 // 클리어한 천체 리스트(도감) 조회 API
 const getClearedCelestialObjects = async (req, res) => {
   try {
-    const records = await prisma.gameRecord.findMany({
+    const celestialRecords = await prisma.gameRecord.findMany({
       where: {
         userId: req.authUser.id,
         isCompleted: true,
@@ -61,13 +61,21 @@ const getClearedCelestialObjects = async (req, res) => {
       },
       include: {
         object: true
-      },
-      orderBy: {
-        completedAt: "desc"
       }
     });
 
-    const cleared = records
+    const apodRecords = await prisma.gameRecord.findMany({
+      where: {
+        userId: req.authUser.id,
+        isCompleted: true,
+        apodDate: { not: null }
+      },
+      include: {
+        apod: true
+      }
+    });
+
+    const clearedCelestial = celestialRecords
       .filter((record) => record.object)
       .map((record) => ({
         id: record.object.id,
@@ -82,6 +90,26 @@ const getClearedCelestialObjects = async (req, res) => {
         rewardStars: record.object.rewardStars,
         clearedAt: record.completedAt
       }));
+
+    const clearedApod = apodRecords
+      .filter((record) => record.apod)
+      .map((record) => ({
+        id: `apod-${record.apodDate}`,
+        nasaId: null,
+        title: record.apod.title,
+        nameEn: null,
+        description: record.apod.description,
+        imageUrl: record.apod.imageUrl,
+        category: "apod",
+        difficulty: record.apod.difficulty,
+        gridSize: record.apod.puzzleConfig?.gridSize ?? null,
+        rewardStars: 0,
+        clearedAt: record.completedAt
+      }));
+
+    const cleared = [...clearedCelestial, ...clearedApod].sort(
+      (a, b) => new Date(b.clearedAt) - new Date(a.clearedAt)
+    );
 
     res.json({ cleared });
   } catch (err) {
