@@ -245,25 +245,23 @@ const getTodayApodHandler = async (req, res) => {
 
 const completeApodPuzzle = async (req, res) => {
   try {
-    const { playTime, date, title } = req.body || {};
+    const { playTime, title } = req.body || {};
 
-    if (!date) {
-      return res.status(400).json({ error: "date가 필요합니다." });
-    }
-
-    const puzzleDate = new Date(date);
-    if (Number.isNaN(puzzleDate.getTime())) {
-      return res.status(400).json({ error: "date 형식이 올바르지 않습니다." });
-    }
-
-    const apod = await prisma.apod.findUnique({ where: { date } });
+    const apodData = await getTodayApod();
+    const apod = await ensureApodPuzzle(apodData);
     if (!apod) {
       return res.status(404).json({ error: "APOD 데이터가 없습니다." });
     }
 
+    const apodDate = apod.date;
+    const puzzleDate = new Date(apodDate);
+    if (Number.isNaN(puzzleDate.getTime())) {
+      return res.status(400).json({ error: "APOD 날짜 형식이 올바르지 않습니다." });
+    }
+
     const recordKey = {
       userId: req.authUser.id,
-      apodDate: date,
+      apodDate: apodDate,
       puzzleType: APOD_PUZZLE_TYPE
     };
 
@@ -348,7 +346,7 @@ const completeApodPuzzle = async (req, res) => {
       message: "APOD puzzle completed successfully",
       data: {
         userId: req.authUser.id,
-        apodDate: date,
+        apodDate,
         apodTitle: title || apod.title,
         playTime: typeof playTime === "number" ? playTime : null,
         completedAt: result.updatedRecord.completedAt,
