@@ -251,6 +251,11 @@ const completeApodPuzzle = async (req, res) => {
       return res.status(400).json({ error: "date가 필요합니다." });
     }
 
+    const puzzleDate = new Date(date);
+    if (Number.isNaN(puzzleDate.getTime())) {
+      return res.status(400).json({ error: "date 형식이 올바르지 않습니다." });
+    }
+
     const apod = await prisma.apod.findUnique({ where: { date } });
     if (!apod) {
       return res.status(404).json({ error: "APOD 데이터가 없습니다." });
@@ -292,18 +297,50 @@ const completeApodPuzzle = async (req, res) => {
         }
       });
 
+      const existingDaily = await tx.dailyPuzzleCompletion.findUnique({
+        where: {
+          userId_puzzleDate: {
+            userId: req.authUser.id,
+            puzzleDate
+          }
+        }
+      });
+
+      let isFirstDailyCompletion = false;
+      if (!existingDaily) {
+        const normalizedPlayTime =
+          typeof playTime === "number" && playTime >= 0
+            ? Math.round(playTime)
+            : 0;
+
+        await tx.dailyPuzzleCompletion.create({
+          data: {
+            userId: req.authUser.id,
+            puzzleDate,
+            playTime: normalizedPlayTime,
+            partsEarned: APOD_REWARD_PARTS
+          }
+        });
+        isFirstDailyCompletion = true;
+      }
+
       let updatedUser = req.authUser;
+      const userUpdate = {};
+      if (isFirstDailyCompletion) {
+        userUpdate.parts = { increment: APOD_REWARD_PARTS };
+      }
       if (isFirstClear) {
+        userUpdate.total_clears = { increment: 1 };
+      }
+
+      if (Object.keys(userUpdate).length > 0) {
         updatedUser = await tx.user.update({
           where: { id: req.authUser.id },
-          data: {
-            parts: { increment: APOD_REWARD_PARTS },
-            total_clears: { increment: 1 }
-          }
+          data: userUpdate
         });
       }
 
-      return { updatedRecord, updatedUser, isFirstClear };
+      return { updatedRecord, updatedUser, isFirstClear, isFirstDailyCompletion };
     });
 
     res.json({
@@ -315,7 +352,7 @@ const completeApodPuzzle = async (req, res) => {
         apodTitle: title || apod.title,
         playTime: typeof playTime === "number" ? playTime : null,
         completedAt: result.updatedRecord.completedAt,
-        rewardParts: result.isFirstClear ? APOD_REWARD_PARTS : 0
+        rewardParts: result.isFirstDailyCompletion ? APOD_REWARD_PARTS : 0
       }
     });
   } catch (err) {
