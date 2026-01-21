@@ -1,4 +1,5 @@
 const prisma = require("../prisma/client");
+const { STAR_MILESTONES } = require("../constants/milestones");
 
 // 섹터 별 천체 조회
 const listBySector = async (req, res) => {
@@ -269,34 +270,76 @@ const getPuzzleStateForNasaId = async (req, res) => {
   }
 };
 
-const awardStarMilestones = async (tx, userId, currentStars) => {
-  const milestones = await tx.starMilestone.findMany({
-    where: {
-      requiredStars: { lte: currentStars }
-    },
-    select: {
-      id: true,
-      rewardCredits: true,
-      rewardParts: true
-    }
-  });
+const awardStarMilestones = async (
+  tx,
+  userId,
+  previousStars,
+  currentStars
+) => {
+  const eligible = STAR_MILESTONES.filter(
+    (milestone) =>
+      milestone.requiredStars > previousStars &&
+      milestone.requiredStars <= currentStars
+  );
 
-  if (milestones.length === 0) {
+  if (eligible.length === 0) {
     return { rewardCredits: 0, rewardParts: 0 };
   }
+
+  const unlockSectorNames = eligible
+    .map((milestone) => milestone.unlockSectorName)
+    .filter(Boolean);
+  const unlockSectors = unlockSectorNames.length
+    ? await tx.sector.findMany({
+        where: { name: { in: unlockSectorNames } },
+        select: { id: true, name: true }
+      })
+    : [];
+  const unlockSectorByName = new Map(
+    unlockSectors.map((sector) => [sector.name, sector.id])
+  );
+
+  const milestoneRecords = await Promise.all(
+    eligible.map((milestone) =>
+      tx.starMilestone.upsert({
+        where: { requiredStars: milestone.requiredStars },
+        create: {
+          requiredStars: milestone.requiredStars,
+          rewardCredits: milestone.rewardCredits,
+          rewardParts: milestone.rewardParts,
+          unlockSectorId: milestone.unlockSectorName
+            ? unlockSectorByName.get(milestone.unlockSectorName) || null
+            : null,
+          milestoneOrder: milestone.requiredStars
+        },
+        update: {
+          rewardCredits: milestone.rewardCredits,
+          rewardParts: milestone.rewardParts,
+          unlockSectorId: milestone.unlockSectorName
+            ? unlockSectorByName.get(milestone.unlockSectorName) || null
+            : null,
+          milestoneOrder: milestone.requiredStars
+        }
+      })
+    )
+  );
+  const milestoneIdByRequiredStars = new Map(
+    milestoneRecords.map((record) => [record.requiredStars, record.id])
+  );
 
   const achieved = await tx.userMilestone.findMany({
     where: {
       userId,
-      milestoneId: { in: milestones.map((milestone) => milestone.id) }
+      milestoneId: { in: milestoneRecords.map((record) => record.id) }
     },
     select: { milestoneId: true }
   });
   const achievedSet = new Set(achieved.map((entry) => entry.milestoneId));
 
-  const newlyAchieved = milestones.filter(
-    (milestone) => !achievedSet.has(milestone.id)
-  );
+  const newlyAchieved = eligible.filter((milestone) => {
+    const milestoneId = milestoneIdByRequiredStars.get(milestone.requiredStars);
+    return milestoneId && !achievedSet.has(milestoneId);
+  });
 
   if (newlyAchieved.length === 0) {
     return { rewardCredits: 0, rewardParts: 0 };
@@ -305,7 +348,7 @@ const awardStarMilestones = async (tx, userId, currentStars) => {
   await tx.userMilestone.createMany({
     data: newlyAchieved.map((milestone) => ({
       userId,
-      milestoneId: milestone.id
+      milestoneId: milestoneIdByRequiredStars.get(milestone.requiredStars)
     })),
     skipDuplicates: true
   });
@@ -400,7 +443,12 @@ const completePuzzleForNasaId = async (req, res) => {
           }
         });
 
-        await awardStarMilestones(tx, req.authUser.id, updatedUser.stars);
+        await awardStarMilestones(
+          tx,
+          req.authUser.id,
+          req.authUser.stars,
+          updatedUser.stars
+        );
       }
 
       return {

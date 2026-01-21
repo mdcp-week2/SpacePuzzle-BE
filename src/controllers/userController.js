@@ -1,4 +1,5 @@
 const prisma = require("../prisma/client");
+const { STAR_MILESTONES } = require("../constants/milestones");
 
 // 유저 정보 조회 API
 const getMe = async (req, res) => {
@@ -51,8 +52,10 @@ const getMe = async (req, res) => {
 };
 
 // 클리어한 천체 리스트(도감) 조회 API
+
 const getClearedCelestialObjects = async (req, res) => {
   try {
+    // 1. 일반 천체 기록 조회
     const celestialRecords = await prisma.gameRecord.findMany({
       where: {
         userId: req.authUser.id,
@@ -64,17 +67,19 @@ const getClearedCelestialObjects = async (req, res) => {
       }
     });
 
+    // 2. APOD 기록 조회
     const apodRecords = await prisma.gameRecord.findMany({
       where: {
         userId: req.authUser.id,
         isCompleted: true,
-        apodDate: { not: null }
+        apodDate: { not: null } // APOD 날짜가 있는 기록만
       },
       include: {
-        apod: true
+        apod: true 
       }
     });
 
+    // 3. 일반 천체 매핑
     const clearedCelestial = celestialRecords
       .filter((record) => record.object)
       .map((record) => ({
@@ -91,22 +96,35 @@ const getClearedCelestialObjects = async (req, res) => {
         clearedAt: record.completedAt
       }));
 
-    const clearedApod = apodRecords
-      .filter((record) => record.apod)
-      .map((record) => ({
+    // 4. APOD 매핑 [수정됨]
+    // record.apod가 null일 경우(FK 불일치 등)에도 앱이 죽지 않고,
+    // 최소한의 정보로 리스트에 표시되도록 fallback 처리
+    const clearedApod = apodRecords.map((record) => {
+      // APOD 정보가 있으면 사용, 없으면 GameRecord의 정보나 기본값 사용 (안전장치)
+      const apodData = record.apod || {
+        title: `APOD ${record.apodDate}`, // 날짜를 제목으로 대체
+        description: "Image details unavailable",
+        imageUrl: null, // 프론트에서 기본 이미지 처리 필요
+        difficulty: "special",
+        puzzleConfig: { gridSize: 7 }
+      };
+
+      return {
         id: `apod-${record.apodDate}`,
         nasaId: null,
-        title: record.apod.title,
+        title: apodData.title,
         nameEn: null,
-        description: record.apod.description,
-        imageUrl: record.apod.imageUrl,
+        description: apodData.description,
+        imageUrl: apodData.imageUrl,
         category: "apod",
-        difficulty: record.apod.difficulty,
-        gridSize: record.apod.puzzleConfig?.gridSize ?? null,
+        difficulty: apodData.difficulty,
+        gridSize: apodData.puzzleConfig?.gridSize ?? 7,
         rewardStars: 0,
         clearedAt: record.completedAt
-      }));
+      };
+    });
 
+    // 5. 합치고 정렬
     const cleared = [...clearedCelestial, ...clearedApod].sort(
       (a, b) => new Date(b.clearedAt) - new Date(a.clearedAt)
     );
@@ -143,31 +161,38 @@ const getUserResources = async (req, res) => {
 
 const getMilestones = async (req, res) => {
   try {
-    const milestones = await prisma.starMilestone.findMany({
-      include: { unlockSector: true },
-      orderBy: { milestoneOrder: "asc" }
-    });
+    const unlockSectorNames = STAR_MILESTONES.map(
+      (milestone) => milestone.unlockSectorName
+    ).filter(Boolean);
+    const unlockSectors = unlockSectorNames.length
+      ? await prisma.sector.findMany({
+          where: { name: { in: unlockSectorNames } },
+          select: { id: true, name: true }
+        })
+      : [];
+    const unlockSectorByName = new Map(
+      unlockSectors.map((sector) => [sector.name, sector])
+    );
 
-    const achieved = await prisma.userMilestone.findMany({
-      where: { userId: req.authUser.id },
-      select: { milestoneId: true }
-    });
-    const achievedSet = new Set(achieved.map((entry) => entry.milestoneId));
-
-    const milestoneList = milestones.map((milestone) => ({
+    const milestoneList = STAR_MILESTONES.map((milestone) => ({
       requiredStars: milestone.requiredStars,
       credits: milestone.rewardCredits,
       spaceParts: milestone.rewardParts,
-      sectorUnlock: milestone.unlockSector
-        ? {
-            id: milestone.unlockSector.id,
-            name: milestone.unlockSector.name
-          }
+      sectorUnlock: milestone.unlockSectorName
+        ? unlockSectorByName.get(milestone.unlockSectorName)
+          ? {
+              id: unlockSectorByName.get(milestone.unlockSectorName).id,
+              name: unlockSectorByName.get(milestone.unlockSectorName).name
+            }
+          : {
+              id: null,
+              name: milestone.unlockSectorName
+            }
         : null,
-      achieved: achievedSet.has(milestone.id)
+      achieved: req.authUser.stars >= milestone.requiredStars
     }));
 
-    const nextMilestone = milestones.find(
+    const nextMilestone = STAR_MILESTONES.find(
       (milestone) => milestone.requiredStars > req.authUser.stars
     );
 

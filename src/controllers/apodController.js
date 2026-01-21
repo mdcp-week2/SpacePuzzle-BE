@@ -253,19 +253,28 @@ const completeApodPuzzle = async (req, res) => {
       return res.status(404).json({ error: "APOD 데이터가 없습니다." });
     }
 
-    const apodDate = apod.date;
-    const puzzleDate = new Date(`${apodDate}T00:00:00.000Z`);
+    // [수정 1] 날짜 정규화: Date 객체든 String이든 무조건 "YYYY-MM-DD" 문자열로 변환
+    const rawDate = apod.date; 
+    const apodDateStr = rawDate instanceof Date 
+      ? rawDate.toISOString().slice(0, 10) 
+      : rawDate;
+
+    // [수정 2] Daily Puzzle용 Date 객체 생성 (UTC 자정 기준 명확화)
+    // 기존: new Date(`${apodDate}T00:00:00.000Z`) -> apodDate가 Date객체면 문자열 깨짐 발생
+    const puzzleDate = new Date(`${apodDateStr}T00:00:00.000Z`);
+
     if (Number.isNaN(puzzleDate.getTime())) {
       return res.status(400).json({ error: "APOD 날짜 형식이 올바르지 않습니다." });
     }
 
     const recordKey = {
       userId: req.authUser.id,
-      apodDate: apodDate,
+      apodDate: apodDateStr, // [수정 3] GameRecord에도 확실한 문자열 키 사용
       puzzleType: APOD_PUZZLE_TYPE
     };
 
     const result = await prisma.$transaction(async (tx) => {
+      // 1. GameRecord 업데이트
       const existing = await tx.gameRecord.findUnique({
         where: {
           userId_apodDate_puzzleType: recordKey
@@ -295,12 +304,12 @@ const completeApodPuzzle = async (req, res) => {
         }
       });
 
-      const existingDaily = await tx.dailyPuzzleCompletion.findUnique({
+      // 2. DailyPuzzleCompletion 확인 및 생성
+      // 복합 키나 날짜 비교 시 시분초 차이로 인한 불일치 방지
+      const existingDaily = await tx.dailyPuzzleCompletion.findFirst({
         where: {
-          userId_puzzleDate: {
-            userId: req.authUser.id,
-            puzzleDate
-          }
+          userId: req.authUser.id,
+          puzzleDate: puzzleDate // 위에서 만든 UTC 자정 시간
         }
       });
 
@@ -314,7 +323,7 @@ const completeApodPuzzle = async (req, res) => {
         await tx.dailyPuzzleCompletion.create({
           data: {
             userId: req.authUser.id,
-            puzzleDate,
+            puzzleDate: puzzleDate,
             playTime: normalizedPlayTime,
             partsEarned: APOD_REWARD_PARTS
           }
@@ -322,8 +331,10 @@ const completeApodPuzzle = async (req, res) => {
         isFirstDailyCompletion = true;
       }
 
+      // 3. 유저 보상 지급
       let updatedUser = req.authUser;
       const userUpdate = {};
+      
       if (isFirstDailyCompletion) {
         userUpdate.parts = { increment: APOD_REWARD_PARTS };
       }
@@ -346,16 +357,18 @@ const completeApodPuzzle = async (req, res) => {
       message: "APOD puzzle completed successfully",
       data: {
         userId: req.authUser.id,
-        apodDate,
+        apodDate: apodDateStr,
         apodTitle: title || apod.title,
         playTime: typeof playTime === "number" ? playTime : null,
         completedAt: result.updatedRecord.completedAt,
-        rewardParts: result.isFirstDailyCompletion ? APOD_REWARD_PARTS : 0
+        rewardParts: result.isFirstDailyCompletion ? APOD_REWARD_PARTS : 0,
+        // 디버깅을 위해 현재 부품 수도 반환하면 좋습니다
+        currentParts: result.updatedUser.parts 
       }
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "서버 에러" });
+    console.error("Complete APOD Error:", err); // 에러 로그 강화
+    res.status(500).json({ error: "서버 에러", details: err.message });
   }
 };
 
