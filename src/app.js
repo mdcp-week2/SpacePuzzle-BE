@@ -2,9 +2,9 @@ const express = require("express");
 const cors = require("cors");
 
 const authRoutes = require("./routes/auth");
+const apodRoutes = require("./routes/apod");
 const celestialRoutes = require("./routes/celestial");
 const userRoutes = require("./routes/user");
-const apodRoutes = require("./routes/apod");
 const shopRoutes = require("./routes/shop");
 const customizationRoutes = require("./routes/customization");
 
@@ -38,9 +38,9 @@ app.get("/", (req, res) => {
 });
 
 app.use("/auth", authRoutes);
+app.use("/", apodRoutes);
 app.use("/", celestialRoutes);
 app.use("/", userRoutes);
-app.use("/", apodRoutes);
 app.use("/", shopRoutes);
 app.use("/", customizationRoutes);
 

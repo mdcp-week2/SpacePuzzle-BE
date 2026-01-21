@@ -320,15 +320,22 @@ const completeApodPuzzle = async (req, res) => {
             ? Math.round(playTime)
             : 0;
 
-        await tx.dailyPuzzleCompletion.create({
-          data: {
-            userId: req.authUser.id,
-            puzzleDate: puzzleDate,
-            playTime: normalizedPlayTime,
-            partsEarned: APOD_REWARD_PARTS
+        try {
+          await tx.dailyPuzzleCompletion.create({
+            data: {
+              userId: req.authUser.id,
+              puzzleDate: puzzleDate,
+              playTime: normalizedPlayTime,
+              partsEarned: APOD_REWARD_PARTS
+            }
+          });
+          isFirstDailyCompletion = true;
+        } catch (err) {
+          // 날짜 정규화 불일치로 인한 중복 키 오류는 무시하고 진행
+          if (err?.code !== "P2002") {
+            throw err;
           }
-        });
-        isFirstDailyCompletion = true;
+        }
       }
 
       // 3. 유저 보상 지급
@@ -399,6 +406,138 @@ const getApodPuzzle = async (req, res) => {
       gridSize: APOD_GRID_SIZE,
       puzzleSeed: apod.puzzleSeed,
       puzzleConfig: apod.puzzleConfig
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
+// APOD 퍼즐 상태 저장
+const saveApodPuzzleState = async (req, res) => {
+  try {
+    const { saveState, playTime } = req.body || {};
+
+    const apodData = await getTodayApod();
+    const apod = await ensureApodPuzzle(apodData);
+    if (!apod) {
+      return res.status(404).json({ error: "APOD 데이터가 없습니다." });
+    }
+
+    const rawDate = apod.date;
+    const apodDateStr = rawDate instanceof Date
+      ? rawDate.toISOString().slice(0, 10)
+      : rawDate;
+
+    const puzzleDate = new Date(`${apodDateStr}T00:00:00.000Z`);
+    if (Number.isNaN(puzzleDate.getTime())) {
+      return res.status(400).json({ error: "APOD 날짜 형식이 올바르지 않습니다." });
+    }
+
+    const recordKey = {
+      userId: req.authUser.id,
+      apodDate: apodDateStr,
+      puzzleType: APOD_PUZZLE_TYPE
+    };
+
+    // saveState가 null이면 저장 상태 삭제 (퍼즐 포기)
+    if (saveState === null) {
+      const existingRecord = await prisma.gameRecord.findUnique({
+        where: {
+          userId_apodDate_puzzleType: recordKey
+        }
+      });
+
+      if (existingRecord) {
+        await prisma.gameRecord.update({
+          where: {
+            userId_apodDate_puzzleType: recordKey
+          },
+          data: {
+            saveState: null,
+            lastAttemptAt: new Date()
+          }
+        });
+      }
+
+      return res.json({
+        message: "저장 상태가 삭제되었습니다.",
+        apodDate: apodDateStr
+      });
+    }
+
+    // saveState가 없으면 에러
+    if (saveState === undefined) {
+      return res.status(400).json({ error: "saveState가 필요합니다." });
+    }
+
+    const payload = {
+      saveState,
+      lastAttemptAt: new Date()
+    };
+
+    if (typeof playTime === "number" && playTime >= 0) {
+      payload.saveState = {
+        ...saveState,
+        playTime
+      };
+    }
+
+    const record = await prisma.gameRecord.upsert({
+      where: {
+        userId_apodDate_puzzleType: recordKey
+      },
+      create: {
+        ...recordKey,
+        saveState: payload.saveState,
+        lastAttemptAt: payload.lastAttemptAt
+      },
+      update: payload
+    });
+
+    res.json({
+      message: "퍼즐 상태 저장 완료",
+      recordId: record.id,
+      lastAttemptAt: record.lastAttemptAt,
+      apodDate: apodDateStr
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "서버 에러" });
+  }
+};
+
+// APOD 퍼즐 상태 불러오기
+const getApodPuzzleState = async (req, res) => {
+  try {
+    const apodData = await getTodayApod();
+    const apod = await ensureApodPuzzle(apodData);
+    if (!apod) {
+      return res.status(404).json({ error: "APOD 데이터가 없습니다." });
+    }
+
+    const rawDate = apod.date;
+    const apodDateStr = rawDate instanceof Date
+      ? rawDate.toISOString().slice(0, 10)
+      : rawDate;
+
+    const record = await prisma.gameRecord.findUnique({
+      where: {
+        userId_apodDate_puzzleType: {
+          userId: req.authUser.id,
+          apodDate: apodDateStr,
+          puzzleType: APOD_PUZZLE_TYPE
+        }
+      }
+    });
+
+    if (!record?.saveState) {
+      return res.json({ saveState: null });
+    }
+
+    res.json({
+      saveState: record.saveState,
+      lastAttemptAt: record.lastAttemptAt
     });
   } catch (err) {
     console.error(err);
@@ -580,6 +719,8 @@ module.exports = {
   getTodayApodHandler,
   completeApodPuzzle,
   getApodPuzzle,
+  saveApodPuzzleState,
+  getApodPuzzleState,
   proxyImage,
   getApodLeaderboard,
 };
